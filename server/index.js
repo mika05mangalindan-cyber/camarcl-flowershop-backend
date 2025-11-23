@@ -404,5 +404,13 @@ app.delete("/notifications/:id", async (req, res) => {
   }
 });
 
+
+
+// Root route
+app.get("/", (req, res) => {
+  res.send("Welcome to Camarcl Flowershop!");
+});
+
+
 // -------------------- START SERVER --------------------
 httpServer.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
