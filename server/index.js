@@ -129,6 +129,17 @@ const upload = multer({ storage });
 // ROUTES
 
 // PRODUCTS ----------------
+
+app.get("/products", async (req, res) => {
+  try {
+    const [results] = await db.query("SELECT * FROM products");
+    res.json(results); 
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 app.get("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -139,6 +150,9 @@ app.get("/products/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
 
 app.post("/products", upload.single("image"), async (req, res) => {
   try {
