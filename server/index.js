@@ -2,33 +2,40 @@ import express from "express";
 import mysql from "mysql2/promise";
 import cors from "cors";
 import dotenv from "dotenv";
-import path from "path";
 import multer from "multer";
-import fs from "fs";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+import { v2 as cloudinary } from "cloudinary";
 
 dotenv.config();
 
+// Cloudinary configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Express setup
 const app = express();
 const PORT = process.env.PORT || 5500;
 
-// MIDDLEWARE --------------------
+// Middleware
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:5173", "https://camarcl-flowershop-frontend.vercel.app", process.env.FRONTEND_URL],
-  methods: ["GET","POST","PUT","DELETE","OPTIONS"],
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://camarcl-flowershop-frontend.vercel.app",
+    process.env.FRONTEND_URL
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true
 }));
-
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve uploaded images
-const uploadsDir = path.join(path.resolve(), "server/uploads");
-app.use("/uploads", express.static(uploadsDir));
-
-// DATABASE --------------------
+// Database connection
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -52,11 +59,16 @@ const db = mysql.createPool({
   }
 })();
 
-//  SOCKET.IO --------------------
+// Socket.IO setup
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: ["http://localhost:3000", "http://localhost:5173", "https://camarcl-flowershop-frontend.vercel.app", process.env.FRONTEND_URL]
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "https://camarcl-flowershop-frontend.vercel.app",
+      process.env.FRONTEND_URL
+    ]
   }
 });
 
@@ -65,7 +77,7 @@ io.on("connection", socket => {
   socket.on("disconnect", () => console.log("Client disconnected:", socket.id));
 });
 
-/// HELPERS --------------------
+// Helpers
 const sendNotification = async (type, reference_id, message) => {
   try {
     const [result] = await db.query(
@@ -95,42 +107,28 @@ const orderStatusNotification = async (order) => {
   if (!order.status) return;
 
   const status = order.status.toLowerCase();
-
   let message = "";
 
-  if (status.includes("delivered")) {
-    message = `Order #${order.id} for ${order.user_name} has been delivered!`;
-  } else if (status.includes("cancelled") || status.includes("returned")) {
-    message = `Order #${order.id} for ${order.user_name} has been cancelled/returned!`;
-  }
+  if (status.includes("delivered")) message = `Order #${order.id} for ${order.user_name} has been delivered!`;
+  else if (status.includes("cancelled") || status.includes("returned")) message = `Order #${order.id} for ${order.user_name} has been cancelled/returned!`;
 
-  if (message) {
-    console.log("Sending notification:", message);
-    await sendNotification("status", order.id, message);
-  } else {
-    console.log("No notification for status:", order.status);
-  }
+  if (message) await sendNotification("status", order.id, message);
 };
 
-
-// Multer //
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
-});
-
-const upload = multer({
-  storage,
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) cb(null, true);
-    else cb(new Error("Only image files are allowed!"), false);
+// Multer + Cloudinary Storage
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "products",
+    allowed_formats: ["jpg","jpeg","png","webp","gif","svg","heic","avif","bmp"],
+    transformation: [{ width: 500, height: 500, crop: "limit" }]
   }
 });
+const upload = multer({ storage });
 
+// ROUTES
 
-// ROUTES --------------------------
-
-// Products //
+// ---------------- PRODUCTS ----------------
 app.get("/products", async (req, res) => {
   try {
     const [results] = await db.query("SELECT * FROM products");
@@ -143,7 +141,7 @@ app.get("/products", async (req, res) => {
 app.post("/products", upload.single("image"), async (req, res) => {
   try {
     const { name, price, stock, category, description } = req.body;
-    const image_url = req.file ? `/uploads/${req.file.filename}` : null;
+    const image_url = req.file?.path || null;
     const [result] = await db.query(
       "INSERT INTO products (name, price, stock, category, description, image_url) VALUES (?, ?, ?, ?, ?, ?)",
       [name, price, stock, category, description, image_url]
@@ -155,41 +153,31 @@ app.post("/products", upload.single("image"), async (req, res) => {
   }
 });
 
-  app.put("/products/:id", upload.single("image"), async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { name, price, stock, category, description } = req.body;
+app.put("/products/:id", upload.single("image"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, price, stock, category, description } = req.body;
+    const image_url = req.file?.path;
 
-      // Only use the new uploaded file if it exists
-      const image_url = req.file
-        ? `/uploads/${req.file.filename}`  // new image selected
-        : undefined;                      // keep existing DB image if no new file
+    const query = image_url
+      ? "UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?"
+      : "UPDATE products SET name=?, price=?, stock=?, category=?, description=? WHERE id=?";
 
-      // Build query dynamically to avoid overwriting image
-      const query = image_url
-        ? "UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?"
-        : "UPDATE products SET name=?, price=?, stock=?, category=?, description=? WHERE id=?";
-      
-      const params = image_url
-        ? [name, price, stock, category, description, image_url, id]
-        : [name, price, stock, category, description, id];
+    const params = image_url
+      ? [name, price, stock, category, description, image_url, id]
+      : [name, price, stock, category, description, id];
 
-      await db.query(query, params);
-      await checkLowStock(id, stock, name);
-
-      res.json({ message: "Product updated!" });
-    } catch (err) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
+    await db.query(query, params);
+    await checkLowStock(id, stock, name);
+    res.json({ message: "Product updated!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.delete("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const [results] = await db.query("SELECT image_url FROM products WHERE id=?", [id]);
-    const imagePath = results[0]?.image_url ? path.join(uploadsDir, path.basename(results[0].image_url)) : null;
-    if (imagePath && fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
     await db.query("DELETE FROM products WHERE id=?", [id]);
     res.json({ message: "Product deleted!" });
   } catch (err) {
@@ -197,7 +185,7 @@ app.delete("/products/:id", async (req, res) => {
   }
 });
 
-// Users
+// ---------------- USERS ----------------
 app.get("/users", async (req, res) => {
   try {
     const [results] = await db.query("SELECT id, name, email, contact_number, role FROM users");
@@ -248,7 +236,7 @@ app.delete("/users/:id", async (req, res) => {
   }
 });
 
-// Orders
+// ---------------- ORDERS ----------------
 app.get("/orders", async (req, res) => {
   try {
     const [rows] = await db.query(`
@@ -274,17 +262,13 @@ app.get("/orders", async (req, res) => {
     `);
     res.json(rows);
   } catch (err) {
-    console.error("Error fetching orders:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
-
-
 app.post("/orders", async (req, res) => {
   const { user_name, payment_mode, items } = req.body;
-  if (!user_name || !payment_mode || !items || !Array.isArray(items) || items.length === 0)
-    return res.status(400).json({ error: "Missing required fields or items" });
+  if (!user_name || !payment_mode || !items?.length) return res.status(400).json({ error: "Missing required fields or items" });
 
   const conn = await db.getConnection();
   try {
@@ -315,7 +299,7 @@ app.post("/orders", async (req, res) => {
       [orderItemsValues]
     );
 
-    // update stock
+    // Update stock
     for (const item of orderItemsData) {
       const product = products.find(p => p.id === item.product_id);
       await conn.query("UPDATE products SET stock=? WHERE id=?", [product.stock - item.quantity, product.id]);
@@ -331,36 +315,28 @@ app.post("/orders", async (req, res) => {
   }
 });
 
-// Update order status
 app.put("/orders/:id/status", async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-
   if (!status) return res.status(400).json({ error: "Status is required" });
 
   try {
-    // Normalize status string before saving
     let normalizedStatus = status.trim();
-    // Optional: enforce proper case
     if (/cancelled/i.test(normalizedStatus)) normalizedStatus = "Cancelled/Returned";
     if (/delivered/i.test(normalizedStatus)) normalizedStatus = "Delivered";
     if (/pending/i.test(normalizedStatus)) normalizedStatus = "Pending";
 
-    // Update order
     await db.query("UPDATE orders SET status=? WHERE id=?", [normalizedStatus, id]);
-
-    // Fetch updated order
     const [results] = await db.query("SELECT id, user_name, status FROM orders WHERE id=?", [id]);
     if (results.length > 0) await orderStatusNotification(results[0]);
 
     res.json({ message: "Status updated!" });
   } catch (err) {
-    console.error("Error updating order status:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Sales by category
+// ---------------- SALES BY CATEGORY ----------------
 app.get("/sales-by-category", async (req, res) => {
   try {
     const [results] = await db.query(`
@@ -376,7 +352,7 @@ app.get("/sales-by-category", async (req, res) => {
   }
 });
 
-// Notifications
+// ---------------- NOTIFICATIONS ----------------
 app.get("/notifications", async (req, res) => {
   try {
     const [results] = await db.query("SELECT * FROM notifications ORDER BY id DESC LIMIT 20");
@@ -387,8 +363,8 @@ app.get("/notifications", async (req, res) => {
 });
 
 app.put("/notifications/:id/read", async (req, res) => {
-  const { id } = req.params;
   try {
+    const { id } = req.params;
     await db.query("UPDATE notifications SET isRead=1 WHERE id=?", [id]);
     res.json({ message: "Notification marked as read!" });
   } catch (err) {
@@ -397,8 +373,8 @@ app.put("/notifications/:id/read", async (req, res) => {
 });
 
 app.delete("/notifications/:id", async (req, res) => {
-  const { id } = req.params;
   try {
+    const { id } = req.params;
     await db.query("DELETE FROM notifications WHERE id=?", [id]);
     res.json({ message: "Notification deleted!" });
   } catch (err) {
@@ -406,12 +382,10 @@ app.delete("/notifications/:id", async (req, res) => {
   }
 });
 
-
-
+// Root
 app.get("/", (req, res) => {
   res.send("Welcome to Camarcl Flowershop Backend!");
 });
 
-
-// START SERVER --------------------
+// Start server
 httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
