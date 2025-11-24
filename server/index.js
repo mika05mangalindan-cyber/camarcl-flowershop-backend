@@ -144,11 +144,16 @@ app.post("/products", upload.single("image"), async (req, res) => {
   try {
     const { name, price, stock, category, description } = req.body;
     const image_url = req.file?.path || null;
+
     const [result] = await db.query(
       "INSERT INTO products (name, price, stock, category, description, image_url) VALUES (?, ?, ?, ?, ?, ?)",
       [name, price, stock, category, description, image_url]
     );
-    await checkLowStock(result.insertId, stock, name);
+
+    if (Number(stock) < 20) {
+      await sendNotification("low on supplies", result.insertId, `Product '${name}' is low on supplies!`);
+    }
+
     res.json({ message: "Product added!", id: result.insertId });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -159,19 +164,16 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
     const { name, price, stock, category, description, existingImageUrl } = req.body;
-
-    // If new image uploaded, use it; else use existingImageUrl (sent from frontend)
     const image_url = req.file?.path || existingImageUrl || null;
 
-    const query = `
-      UPDATE products 
-      SET name=?, price=?, stock=?, category=?, description=?, image_url=? 
-      WHERE id=?
-    `;
-    const params = [name, price, stock, category, description, image_url, id];
+    await db.query(
+      "UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?",
+      [name, price, stock, category, description, image_url, id]
+    );
 
-    await db.query(query, params);
-    await checkLowStock(id, stock, name);
+    if (Number(stock) < 20) {
+      await sendNotification("low on supplies", id, `Product '${name}' is low on supplies!`);
+    }
 
     res.json({ message: "Product updated!" });
   } catch (err) {
