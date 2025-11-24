@@ -32,6 +32,7 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -153,12 +154,17 @@ app.get("/products/:id", async (req, res) => {
 });
 
 
+
 app.post("/products", upload.single("image"), async (req, res) => {
   try {
     const { name, price, stock, category, description } = req.body;
 
     if (!name || !price || !stock) {
       return res.status(400).json({ error: "Name, price, and stock are required" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: "Product image is required" });
     }
 
     const priceNum = parseFloat(price);
@@ -168,14 +174,14 @@ app.post("/products", upload.single("image"), async (req, res) => {
       return res.status(400).json({ error: "Price and stock must be valid numbers" });
     }
 
-    const image_url = req.file?.path || null;
+    const image_url = req.file.path; // Cloudinary URL
 
     const [result] = await db.query(
       "INSERT INTO products (name, price, stock, category, description, image_url, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())",
       [name, priceNum, stockNum, category || null, description || null, image_url]
     );
 
-    // // Low stock notification
+    // Low stock notification
     if (stockNum < 20) {
       await sendNotification("low on supplies", result.insertId, `Product '${name}' is low on supplies!`);
     }
@@ -192,6 +198,7 @@ app.post("/products", upload.single("image"), async (req, res) => {
         image_url
       }
     });
+
   } catch (err) {
     console.error("Add product error:", err);
     res.status(500).json({ error: "Failed to add product" });
@@ -202,27 +209,24 @@ app.post("/products", upload.single("image"), async (req, res) => {
 app.put("/products/:id", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
-     let { name, price, stock, category, description, existingImageUrl } = req.body;
+    const { name, price, stock, category, description } = req.body;
 
-
-    // Fetch existing product to ensure it exists
+    // Fetch existing product
     const [existing] = await db.query("SELECT * FROM products WHERE id=?", [id]);
     if (existing.length === 0) return res.status(404).json({ error: "Product not found" });
-
     const product = existing[0];
 
+    // Convert numeric fields
     const priceNum = price ? parseFloat(price) : product.price;
     const stockNum = stock ? parseInt(stock) : product.stock;
     if (isNaN(priceNum) || isNaN(stockNum)) {
       return res.status(400).json({ error: "Price and stock must be valid numbers" });
     }
-    // Determine final image URL
-    const finalImageUrl = req.file?.path || existingImageUrl || product.image_url || null;
 
+    // Determine image URL
+    const image_url = req.file ? req.file.path : product.image_url;
 
-    // // Use new image if uploaded, otherwise existingImageUrl
-    // const image_url = req.file?.path || existingImageUrl || existing[0].image_url || null;
-
+    // Update DB
     await db.query(
       "UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?",
       [
@@ -231,17 +235,17 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
         stockNum,
         category || product.category,
         description || product.description,
-        finalImageUrl,
+        image_url,
         id
       ]
     );
 
     // Low stock notification
-    if (Number(stock) < 20) {
+    if (stockNum < 20) {
       await sendNotification("low on supplies", id, `Product '${name || product.name}' is low on supplies!`);
     }
 
-       res.json({
+    res.json({
       message: "Product updated successfully!",
       product: {
         id,
@@ -250,11 +254,12 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
         stock: stockNum,
         category: category || product.category,
         description: description || product.description,
-        image_url: finalImageUrl
+        image_url
       }
     });
+
   } catch (err) {
-    console.error("PUT /products/:id error:", err);
+    console.error("Update product error:", err);
     res.status(500).json({ error: "Failed to update product" });
   }
 });
@@ -263,10 +268,33 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
 app.delete("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Fetch product first
+    const [rows] = await db.query("SELECT image_url FROM products WHERE id=?", [id]);
+    if (rows.length === 0) return res.status(404).json({ error: "Product not found" });
+
+    const imageUrl = rows[0].image_url;
+
+    // Optional: Delete image from Cloudinary
+    if (imageUrl) {
+      try {
+        const segments = imageUrl.split("/");
+        const publicIdWithExt = segments[segments.length - 1];
+        const publicId = "products/" + publicIdWithExt.split(".")[0];
+        await cloudinary.uploader.destroy(publicId);
+      } catch (cloudErr) {
+        console.warn("Cloudinary delete error:", cloudErr.message);
+      }
+    }
+
+    // Delete product
     await db.query("DELETE FROM products WHERE id=?", [id]);
-    res.json({ message: "Product deleted!" });
+
+    res.json({ message: "Product deleted successfully!" });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Delete product error:", err);
+    res.status(500).json({ error: "Failed to delete product" });
   }
 });
 
