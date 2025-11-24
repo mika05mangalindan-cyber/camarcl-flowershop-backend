@@ -152,12 +152,15 @@ app.get("/products/:id", async (req, res) => {
 });
 
 
-
-
 app.post("/products", upload.single("image"), async (req, res) => {
   try {
     const { name, price, stock, category, description } = req.body;
-    const image_url = req.file?.path || null;
+
+    if (!name || !price || !stock) {
+      return res.status(400).json({ error: "Name, price, and stock are required" });
+    }
+
+    const image_url = req.file?.path || null; 
 
     const [result] = await db.query(
       "INSERT INTO products (name, price, stock, category, description, image_url) VALUES (?, ?, ?, ?, ?, ?)",
@@ -168,30 +171,63 @@ app.post("/products", upload.single("image"), async (req, res) => {
       await sendNotification("low on supplies", result.insertId, `Product '${name}' is low on supplies!`);
     }
 
-    res.json({ message: "Product added!", id: result.insertId });
+    res.json({
+      message: "Product added successfully!",
+      product: {
+        id: result.insertId,
+        name,
+        price,
+        stock,
+        category,
+        description,
+        image_url
+      }
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to add product" });
   }
 });
+
 
 app.put("/products/:id", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
     const { name, price, stock, category, description, existingImageUrl } = req.body;
-    const image_url = req.file?.path || existingImageUrl || null;
 
+    // Fetch existing product to ensure it exists
+    const [existing] = await db.query("SELECT * FROM products WHERE id=?", [id]);
+    if (existing.length === 0) return res.status(404).json({ error: "Product not found" });
+
+    // Use new image if uploaded, otherwise existingImageUrl
+    const image_url = req.file?.path || existingImageUrl || existing[0].image_url || null;
+
+    // Update product in DB
     await db.query(
       "UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?",
-      [name, price, stock, category, description, image_url, id]
+      [name || existing[0].name, price || existing[0].price, stock || existing[0].stock, category || existing[0].category, description || existing[0].description, image_url, id]
     );
 
+    // Low stock notification
     if (Number(stock) < 20) {
-      await sendNotification("low on supplies", id, `Product '${name}' is low on supplies!`);
+      await sendNotification("low on supplies", id, `Product '${name || existing[0].name}' is low on supplies!`);
     }
 
-    res.json({ message: "Product updated!" });
+    res.json({
+      message: "Product updated successfully!",
+      product: {
+        id,
+        name: name || existing[0].name,
+        price: price || existing[0].price,
+        stock: stock || existing[0].stock,
+        category: category || existing[0].category,
+        description: description || existing[0].description,
+        image_url
+      }
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Failed to update product" });
   }
 });
 
