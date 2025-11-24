@@ -128,11 +128,13 @@ const upload = multer({ storage });
 
 // ROUTES
 
-// ---------------- PRODUCTS ----------------
-app.get("/products", async (req, res) => {
+// PRODUCTS ----------------
+app.get("/products/:id", async (req, res) => {
   try {
-    const [results] = await db.query("SELECT * FROM products");
-    res.json(results);
+    const { id } = req.params;
+    const [results] = await db.query("SELECT * FROM products WHERE id = ?", [id]);
+    if (results.length === 0) return res.status(404).json({ error: "Product not found" });
+    res.json(results[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -156,24 +158,29 @@ app.post("/products", upload.single("image"), async (req, res) => {
 app.put("/products/:id", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, price, stock, category, description } = req.body;
-    const image_url = req.file?.path;
+    const { name, price, stock, category, description, existingImageUrl } = req.body;
 
-    const query = image_url
-      ? "UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?"
-      : "UPDATE products SET name=?, price=?, stock=?, category=?, description=? WHERE id=?";
+    // If new image uploaded, use it; else use existingImageUrl (sent from frontend)
+    const image_url = req.file?.path || existingImageUrl || null;
 
-    const params = image_url
-      ? [name, price, stock, category, description, image_url, id]
-      : [name, price, stock, category, description, id];
+    const query = `
+      UPDATE products 
+      SET name=?, price=?, stock=?, category=?, description=?, image_url=? 
+      WHERE id=?
+    `;
+    const params = [name, price, stock, category, description, image_url, id];
 
     await db.query(query, params);
     await checkLowStock(id, stock, name);
+
     res.json({ message: "Product updated!" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+
 
 app.delete("/products/:id", async (req, res) => {
   try {
