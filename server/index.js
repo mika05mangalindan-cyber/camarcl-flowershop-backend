@@ -182,8 +182,6 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
 });
 
 
-
-
 app.delete("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -194,7 +192,7 @@ app.delete("/products/:id", async (req, res) => {
   }
 });
 
-// ---------------- USERS ----------------
+// USERS ----------------
 app.get("/users", async (req, res) => {
   try {
     const [results] = await db.query("SELECT id, name, email, contact_number, role FROM users");
