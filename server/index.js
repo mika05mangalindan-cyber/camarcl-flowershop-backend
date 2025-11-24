@@ -13,12 +13,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5500;
 
-// -------------------- MIDDLEWARE --------------------
+// MIDDLEWARE --------------------
 app.use(cors({
-  origin: "http://localhost:3000",
+  origin: ["http://localhost:3000", "http://localhost:5173", "https://camarcl-flowershop-frontend.vercel.app", process.env.FRONTEND_URL],
   methods: ["GET","POST","PUT","DELETE","OPTIONS"],
   credentials: true
 }));
+
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -26,12 +28,12 @@ app.use(express.urlencoded({ extended: true }));
 const uploadsDir = path.join(path.resolve(), "server/uploads");
 app.use("/uploads", express.static(uploadsDir));
 
-// -------------------- DATABASE --------------------
+// DATABASE --------------------
 const db = mysql.createPool({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "root12345",
-  database: process.env.DB_NAME || "camarcl_flowershop",
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
   port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
   waitForConnections: true,
   connectionLimit: 10,
@@ -50,12 +52,11 @@ const db = mysql.createPool({
   }
 })();
 
-// -------------------- SOCKET.IO --------------------
+//  SOCKET.IO --------------------
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:3000",
-    methods: ["GET","POST","PUT","DELETE"]
+    origin: ["http://localhost:3000", "http://localhost:5173", "https://camarcl-flowershop-frontend.vercel.app", process.env.FRONTEND_URL]
   }
 });
 
@@ -64,7 +65,7 @@ io.on("connection", socket => {
   socket.on("disconnect", () => console.log("Client disconnected:", socket.id));
 });
 
-/// -------------------- HELPERS --------------------
+/// HELPERS --------------------
 const sendNotification = async (type, reference_id, message) => {
   try {
     const [result] = await db.query(
@@ -112,7 +113,7 @@ const orderStatusNotification = async (order) => {
 };
 
 
-// -------------------- MULTER --------------------
+// Multer //
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
@@ -126,9 +127,10 @@ const upload = multer({
   }
 });
 
-// -------------------- ROUTES --------------------
 
-// Products
+// ROUTES --------------------------
+
+// Products //
 app.get("/products", async (req, res) => {
   try {
     const [results] = await db.query("SELECT * FROM products");
@@ -406,11 +408,10 @@ app.delete("/notifications/:id", async (req, res) => {
 
 
 
-// Root route
 app.get("/", (req, res) => {
-  res.send("Welcome to Camarcl Flowershop!");
+  res.send("Welcome to Camarcl Flowershop Backend!");
 });
 
 
-// -------------------- START SERVER --------------------
-httpServer.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+// START SERVER --------------------
+httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
