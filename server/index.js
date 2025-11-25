@@ -164,62 +164,37 @@ const orderStatusNotification = async (order) => {
 
 // PRODUCTS ----------------
 
-app.get("/products", async (req, res) => {
-  try {
-    const [results] = await db.query("SELECT * FROM products");
-
-    // Remove Cloudinary version from image URLs
-    const cleaned = results.map(p => ({
-      ...p,
-      image_url: p.image_url ? p.image_url.replace(/\/v\d+\//, "/") : p.image_url
-    }));
-
-    res.json(cleaned);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
-app.get("/products/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const [results] = await db.query("SELECT * FROM products WHERE id=?", [id]);
-    if (results.length === 0) return res.status(404).json({ error: "Product not found" });
-
-    const product = results[0];
-    if (product.image_url) product.image_url = product.image_url.replace(/\/v\d+\//, "/");
-
-    res.json(product);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-
 app.post("/products", upload.single("image"), async (req, res) => {
   try {
     const { name, price, stock, category, description } = req.body;
 
-    if (!name || !price || !stock) return res.status(400).json({ error: "Name, price, and stock are required" });
-    if (!req.file) return res.status(400).json({ error: "Product image is required" });
+    if (!req.file) {
+      return res.status(400).json({ error: "Product image is required" });
+    }
 
-    const priceNum = parseFloat(price);
-    const stockNum = parseInt(stock);
-    if (isNaN(priceNum) || isNaN(stockNum)) return res.status(400).json({ error: "Price and stock must be numbers" });
-
-    const image_url = req.file.secure_url || req.file.path;
+    const image_url = req.file.secure_url;
 
     const [result] = await db.query(
-      "INSERT INTO products (name, price, stock, category, description, image_url, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())",
-      [name, priceNum, stockNum, category || null, description || null, image_url]
+      `INSERT INTO products (name, price, stock, category, description, image_url, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+      [name, price, stock, category, description, image_url]
     );
 
-    if (stockNum < 20) await sendNotification("low on supplies", result.insertId, `Product '${name}' is low on stock!`);
+
+    const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
     res.json({
-      message: "Product added successfully!",
-      product: { id: result.insertId, name, price: priceNum, stock: stockNum, category, description, image_url },
+      message: "Product added successfully",
+      supply_alert: supplyAlert,
+      product: {
+        id: result.insertId,
+        name,
+        price,
+        stock,
+        category,
+        description,
+        image_url
+      }
     });
   } catch (err) {
     console.error("Add product error:", err);
@@ -227,68 +202,102 @@ app.post("/products", upload.single("image"), async (req, res) => {
   }
 });
 
+app.get("/products", async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM products ORDER BY created_at DESC");
+
+   
+    const products = rows.map(p => ({
+      ...p,
+      supply_alert: p.stock < 20 ? "LOW ON SUPPLIES" : "OK"
+    }));
+
+    res.json(products);
+  } catch (err) {
+    console.error("Fetch products error:", err);
+    res.status(500).json({ error: "Failed to load products" });
+  }
+});
+
+app.get("/products/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.query("SELECT * FROM products WHERE id = ?", [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const product = rows[0];
+
+    res.json({
+      ...product,
+      supply_alert: product.stock < 20 ? "LOW ON SUPPLIES" : "OK"
+    });
+
+  } catch (err) {
+    console.error("Fetch product error:", err);
+    res.status(500).json({ error: "Failed to load product" });
+  }
+});
 
 app.put("/products/:id", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
     const { name, price, stock, category, description, existingImageUrl } = req.body;
 
-    if (!name || !price || !stock) return res.status(400).json({ error: "Name, price, and stock are required" });
+    let image_url = existingImageUrl;
 
-    const priceNum = parseFloat(price);
-    const stockNum = parseInt(stock);
-    if (isNaN(priceNum) || isNaN(stockNum)) return res.status(400).json({ error: "Price and stock must be numbers" });
-
-    // Determine which image to use
-    let image_url = existingImageUrl || null;
-    if (req.file?.secure_url) image_url = req.file.secure_url;
-
-    if (!image_url) return res.status(400).json({ error: "Product image is required" });
+    if (req.file) {
+      image_url = req.file.secure_url;
+    }
 
     await db.query(
-      "UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?",
-      [name, priceNum, stockNum, category || null, description || null, image_url, id]
+      `UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?`,
+      [name, price, stock, category, description, image_url, id]
     );
 
-    res.json({ message: "Product updated successfully!", product: { id, name, price: priceNum, stock: stockNum, category, description, image_url } });
+    res.json({
+      message: "Product updated successfully",
+      supply_alert: stock < 20 ? "LOW ON SUPPLIES" : "OK",
+      product: { id, name, price, stock, category, description, image_url }
+    });
+
   } catch (err) {
     console.error("Update product error:", err);
     res.status(500).json({ error: "Failed to update product" });
   }
 });
 
-
-
 app.delete("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const [rows] = await db.query("SELECT image_url FROM products WHERE id=?", [id]);
-    if (rows.length === 0) return res.status(404).json({ error: "Product not found" });
+    const [rows] = await db.query("SELECT image_url FROM products WHERE id = ?", [id]);
+
+    if (!rows.length) {
+      return res.status(404).json({ error: "Product not found" });
+    }
 
     const imageUrl = rows[0].image_url;
 
-    // Delete from Cloudinary
     if (imageUrl) {
-      try {
-        const segments = imageUrl.split("/");
-        const publicIdWithExt = segments[segments.length - 1];
-        const publicId = "products/" + publicIdWithExt.split(".")[0];
-        await cloudinary.uploader.destroy(publicId);
-      } catch (cloudErr) {
-        console.warn("Cloudinary delete error:", cloudErr.message);
-      }
+      const parts = imageUrl.split("/");
+      const file = parts[parts.length - 1];
+      const publicId = "products/" + file.split(".")[0];
+
+      await cloudinary.uploader.destroy(publicId);
     }
 
-    await db.query("DELETE FROM products WHERE id=?", [id]);
+    await db.query("DELETE FROM products WHERE id = ?", [id]);
 
-    res.json({ message: "Product deleted successfully!" });
+    res.json({ message: "Product deleted successfully" });
   } catch (err) {
     console.error("Delete product error:", err);
     res.status(500).json({ error: "Failed to delete product" });
   }
 });
-
 
 
 // USERS ----------------
@@ -301,8 +310,18 @@ app.get("/users", async (req, res) => {
   }
 });
 
-
-;
+app.post("/users", async (req, res) => {
+  try {
+    const { name, email, contact_number, role, password } = req.body;
+    const [result] = await db.query(
+      "INSERT INTO users (name, email, contact_number, role, password) VALUES (?, ?, ?, ?, ?)",
+      [name, email, contact_number || null, role, password]
+    );
+    res.json({ message: "User created!", user_id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}); 
 
 app.put("/users/:id", async (req, res) => {
   try {
