@@ -36,7 +36,30 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Database connection
+// // Database connection
+// const db = mysql.createPool({
+//   host: process.env.DB_HOST,
+//   user: process.env.DB_USER,
+//   password: process.env.DB_PASSWORD,
+//   database: process.env.DB_NAME,
+//   port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
+//   waitForConnections: true,
+//   connectionLimit: 10,
+//   queueLimit: 0
+// });
+
+// // Test DB connection
+// (async () => {
+//   try {
+//     const conn = await db.getConnection();
+//     console.log("Connected to MySQL database!");
+//     conn.release();
+//   } catch (err) {
+//     console.error("MySQL connection error:", err);
+//     process.exit(1);
+//   }
+// })();
+
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -48,17 +71,26 @@ const db = mysql.createPool({
   queueLimit: 0
 });
 
-// Test DB connection
-(async () => {
+// Test the DB connection
+const testConnection = async () => {
   try {
     const conn = await db.getConnection();
-    console.log("Connected to MySQL database!");
+    console.log("✅ Connected to MySQL database!");
     conn.release();
   } catch (err) {
-    console.error("MySQL connection error:", err);
-    process.exit(1);
+    console.error("❌ MySQL connection error:", err);
+    setTimeout(testConnection, 5000); // retry after 5 seconds
   }
-})();
+};
+
+// Call test connection at startup
+testConnection();
+
+// Optional: handle uncaught promise rejections globally
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled promise rejection:", err);
+});
+
 
 // Socket.IO setup
 const httpServer = createServer(app);
@@ -135,7 +167,14 @@ const orderStatusNotification = async (order) => {
 app.get("/products", async (req, res) => {
   try {
     const [results] = await db.query("SELECT * FROM products");
-    res.json(results); 
+
+    // Remove Cloudinary version from image URLs
+    const cleaned = results.map(p => ({
+      ...p,
+      image_url: p.image_url ? p.image_url.replace(/\/v\d+\//, "/") : p.image_url
+    }));
+
+    res.json(cleaned);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -145,60 +184,43 @@ app.get("/products", async (req, res) => {
 app.get("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const [results] = await db.query("SELECT * FROM products WHERE id = ?", [id]);
+    const [results] = await db.query("SELECT * FROM products WHERE id=?", [id]);
     if (results.length === 0) return res.status(404).json({ error: "Product not found" });
-    res.json(results[0]);
+
+    const product = results[0];
+    if (product.image_url) product.image_url = product.image_url.replace(/\/v\d+\//, "/");
+
+    res.json(product);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 
-
 app.post("/products", upload.single("image"), async (req, res) => {
   try {
     const { name, price, stock, category, description } = req.body;
 
-    if (!name || !price || !stock) {
-      return res.status(400).json({ error: "Name, price, and stock are required" });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ error: "Product image is required" });
-    }
+    if (!name || !price || !stock) return res.status(400).json({ error: "Name, price, and stock are required" });
+    if (!req.file) return res.status(400).json({ error: "Product image is required" });
 
     const priceNum = parseFloat(price);
     const stockNum = parseInt(stock);
+    if (isNaN(priceNum) || isNaN(stockNum)) return res.status(400).json({ error: "Price and stock must be numbers" });
 
-    if (isNaN(priceNum) || isNaN(stockNum)) {
-      return res.status(400).json({ error: "Price and stock must be valid numbers" });
-    }
-
-    const image_url = req.file.path; // Cloudinary URL
+    const image_url = req.file.secure_url || req.file.path;
 
     const [result] = await db.query(
       "INSERT INTO products (name, price, stock, category, description, image_url, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())",
       [name, priceNum, stockNum, category || null, description || null, image_url]
     );
 
-    // Low stock notification
-    if (stockNum < 20) {
-      await sendNotification("low on supplies", result.insertId, `Product '${name}' is low on supplies!`);
-    }
+    if (stockNum < 20) await sendNotification("low on supplies", result.insertId, `Product '${name}' is low on stock!`);
 
     res.json({
       message: "Product added successfully!",
-      product: {
-        id: result.insertId,
-        name,
-        price: priceNum,
-        stock: stockNum,
-        category: category || null,
-        description: description || null,
-        image_url
-      }
+      product: { id: result.insertId, name, price: priceNum, stock: stockNum, category, description, image_url },
     });
-
   } catch (err) {
     console.error("Add product error:", err);
     res.status(500).json({ error: "Failed to add product" });
@@ -209,55 +231,26 @@ app.post("/products", upload.single("image"), async (req, res) => {
 app.put("/products/:id", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, price, stock, category, description } = req.body;
+    const { name, price, stock, category, description, existingImageUrl } = req.body;
 
-    // Fetch existing product
-    const [existing] = await db.query("SELECT * FROM products WHERE id=?", [id]);
-    if (existing.length === 0) return res.status(404).json({ error: "Product not found" });
-    const product = existing[0];
+    if (!name || !price || !stock) return res.status(400).json({ error: "Name, price, and stock are required" });
 
-    // Convert numeric fields
-    const priceNum = price ? parseFloat(price) : product.price;
-    const stockNum = stock ? parseInt(stock) : product.stock;
-    if (isNaN(priceNum) || isNaN(stockNum)) {
-      return res.status(400).json({ error: "Price and stock must be valid numbers" });
-    }
+    const priceNum = parseFloat(price);
+    const stockNum = parseInt(stock);
+    if (isNaN(priceNum) || isNaN(stockNum)) return res.status(400).json({ error: "Price and stock must be numbers" });
 
-    // Determine image URL
-    const image_url = req.file ? req.file.path : product.image_url;
+    // Determine which image to use
+    let image_url = existingImageUrl || null;
+    if (req.file?.secure_url) image_url = req.file.secure_url;
 
-    // Update DB
+    if (!image_url) return res.status(400).json({ error: "Product image is required" });
+
     await db.query(
       "UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?",
-      [
-        name || product.name,
-        priceNum,
-        stockNum,
-        category || product.category,
-        description || product.description,
-        image_url,
-        id
-      ]
+      [name, priceNum, stockNum, category || null, description || null, image_url, id]
     );
 
-    // Low stock notification
-    if (stockNum < 20) {
-      await sendNotification("low on supplies", id, `Product '${name || product.name}' is low on supplies!`);
-    }
-
-    res.json({
-      message: "Product updated successfully!",
-      product: {
-        id,
-        name: name || product.name,
-        price: priceNum,
-        stock: stockNum,
-        category: category || product.category,
-        description: description || product.description,
-        image_url
-      }
-    });
-
+    res.json({ message: "Product updated successfully!", product: { id, name, price: priceNum, stock: stockNum, category, description, image_url } });
   } catch (err) {
     console.error("Update product error:", err);
     res.status(500).json({ error: "Failed to update product" });
@@ -265,17 +258,17 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
 });
 
 
+
 app.delete("/products/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Fetch product first
     const [rows] = await db.query("SELECT image_url FROM products WHERE id=?", [id]);
     if (rows.length === 0) return res.status(404).json({ error: "Product not found" });
 
     const imageUrl = rows[0].image_url;
 
-    // Optional: Delete image from Cloudinary
+    // Delete from Cloudinary
     if (imageUrl) {
       try {
         const segments = imageUrl.split("/");
@@ -287,16 +280,16 @@ app.delete("/products/:id", async (req, res) => {
       }
     }
 
-    // Delete product
     await db.query("DELETE FROM products WHERE id=?", [id]);
 
     res.json({ message: "Product deleted successfully!" });
-
   } catch (err) {
     console.error("Delete product error:", err);
     res.status(500).json({ error: "Failed to delete product" });
   }
 });
+
+
 
 // USERS ----------------
 app.get("/users", async (req, res) => {
@@ -308,19 +301,8 @@ app.get("/users", async (req, res) => {
   }
 });
 
-app.post("/users", async (req, res) => {
-  try {
-    const { name, email, contact_number, role, password } = req.body;
-    if (!name || !email || !role) return res.status(400).json({ error: "Name, email, and role are required" });
-    const [result] = await db.query(
-      "INSERT INTO users (name, email, contact_number, role, password) VALUES (?, ?, ?, ?, ?)",
-      [name, email, contact_number || null, role, password || null]
-    );
-    res.json({ message: "User added!", id: result.insertId });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+
+;
 
 app.put("/users/:id", async (req, res) => {
   try {
