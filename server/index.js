@@ -672,27 +672,29 @@ app.post("/login", async (req, res) => {
   const emailInput = req.body.email?.trim();
   const passwordInput = req.body.password?.trim();
 
-  if (!emailInput || !passwordInput) return res.status(400).json({ error: "Email and password are required." });
+  if (!emailInput || !passwordInput)
+    return res.status(400).json({ error: "Email and password are required." });
 
   const [rows] = await db.query(
     "SELECT id, name, email, password, role FROM users WHERE email=?",
     [emailInput]
   );
 
-  if (!rows.length) return res.status(400).json({ error: "Invalid email or password." });
+  if (!rows.length)
+    return res.status(400).json({ error: "Invalid email or password." });
 
   const user = rows[0];
 
-  if (passwordInput !== user.password) return res.status(400).json({ error: "Invalid email or password." });
+  if (passwordInput !== user.password)
+    return res.status(400).json({ error: "Invalid email or password." });
 
-  if (user.role !== "admin") return res.status(403).json({ error: "Access denied. Admins only." });
+  if (user.role !== "admin")
+    return res.status(403).json({ error: "Access denied. Admins only." });
 
   req.session.user = { id: user.id, name: user.name, role: user.role };
 
   res.json({ message: "Login successful", user: req.session.user });
 });
-
-
 
 
 app.post("/logout", (req, res) => {
