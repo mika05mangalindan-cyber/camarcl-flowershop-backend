@@ -141,11 +141,19 @@ const sendNotification = async (type, reference_id, message) => {
 };
 
 const lowStockNotification = async (product) => {
-  if (product.stock == null) return; 
+  if (!product || product.stock == null) return;
 
-  const stock = Number(product.stock); 
+  const stock = Number(product.stock);
+  if (isNaN(stock)) return;
 
-  if (!isNaN(stock) && stock < 20) {
+  // Avoid duplicate spam by checking if a recent notif exists:
+  const [existing] = await db.query(
+    "SELECT id FROM notifications WHERE type='low on supplies' AND reference_id=? ORDER BY id DESC LIMIT 1",
+    [product.id]
+  );
+
+  // Only send when new OR if stock went from >=20 to <20
+  if (!existing.length && stock < 20) {
     await sendNotification(
       "low on supplies",
       product.id,
@@ -153,9 +161,6 @@ const lowStockNotification = async (product) => {
     );
   }
 };
-
-
-
 
 
 
@@ -234,7 +239,8 @@ app.post("/products", upload.single("image"), async (req, res) => {
 
     stock = Number(stock);
     price = Number(price);
-    const image_url = req.file.path || req.file.secure_url;
+    const image_url = req.file.secure_url;
+
 
     const [result] = await db.query(
       `INSERT INTO products (name, price, stock, category, description, image_url, created_at)
@@ -364,8 +370,10 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     if (!prevRows.length) return res.status(404).json({ error: "Product not found" });
 
     const prevStock = Number(prevRows[0].stock);
-    let image_url = existingImageUrl;
-    if (req.file) image_url = req.file.path || req.file.secure_url;
+    if (req.file) {
+        image_url = req.file.secure_url;
+      }
+
 
     await db.query(
       `UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?`,
