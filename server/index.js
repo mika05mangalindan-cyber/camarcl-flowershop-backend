@@ -654,8 +654,8 @@ app.delete("/notifications/:id", async (req, res) => {
   }
 });
 
-
-app.post("/login", async (req, res) => {
+// ---------------- LOGIN & LOGOUT ----------------
+app.post("/admin/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -664,54 +664,53 @@ app.post("/login", async (req, res) => {
       [email]
     );
 
-    if (rows.length === 0) {
-      return res.status(400).json({ error: "Invalid email or password" });
-    }
+    if (!rows.length) return res.status(400).json({ error: "Invalid email or password" });
 
     const user = rows[0];
 
-    // Plaintext check (because your DB has plaintext passwords)
-    if (password !== user.password) {
+    if (password !== user.password)
       return res.status(400).json({ error: "Invalid email or password" });
-    }
 
-    // Save login info to session
+    if (user.role !== "admin")
+      return res.status(403).json({ error: "Access denied. Admins only." });
+
+    // Save session
     req.session.user = {
       id: user.id,
       name: user.name,
-      role: user.role,
+      role: user.role
     };
 
     res.json({ message: "Login successful", user: req.session.user });
-
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ error: "Login failed" });
   }
 });
 
-
-app.post("/logout", (req, res) => {
-  req.session.destroy(() => {
+app.post("/admin/logout", (req, res) => {
+  req.session.destroy(err => {
+    if (err) return res.status(500).json({ error: "Logout failed" });
+    res.clearCookie("connect.sid"); 
     res.json({ message: "Logged out successfully" });
   });
 });
 
-const requireLogin = (req, res, next) => {
-  if (!req.session.user) {
-    return res.status(401).json({ error: "Unauthorized. Please log in." });
+// ---------------- MIDDLEWARE ----------------
+const requireAdmin = (req, res, next) => {
+  if (!req.session.user || req.session.user.role !== "admin") {
+    return res.status(401).json({ error: "Unauthorized. Admin login required." });
   }
   next();
 };
 
-// backend
-app.get("/admin/dashboard", (req, res) => {
-  if (req.session?.user) {
-    res.json({ user: req.session.user });
-  } else {
-    res.status(401).json({ error: "Not logged in" });
-  }
+// ---------------- DASHBOARD (PROTECTED) ----------------
+app.get("/admin/dashboard", requireAdmin, (req, res) => {
+  res.json({ user: req.session.user });
 });
+
+
+
 
 
 
