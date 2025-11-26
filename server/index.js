@@ -75,18 +75,17 @@ const db = mysql.createPool({
 const testConnection = async () => {
   try {
     const conn = await db.getConnection();
-    console.log("✅ Connected to MySQL database!");
+    console.log("Connected to MySQL database!");
     conn.release();
   } catch (err) {
-    console.error("❌ MySQL connection error:", err);
-    setTimeout(testConnection, 5000); // retry after 5 seconds
+    console.error("MySQL connection error:", err);
+    setTimeout(testConnection, 5000);
   }
 };
 
-// Call test connection at startup
 testConnection();
 
-// Optional: handle uncaught promise rejections globally
+
 process.on("unhandledRejection", (err) => {
   console.error("Unhandled promise rejection:", err);
 });
