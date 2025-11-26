@@ -146,14 +146,8 @@ const lowStockNotification = async (product) => {
   const stock = Number(product.stock);
   if (isNaN(stock)) return;
 
-  // Avoid duplicate spam by checking if a recent notif exists:
-  const [existing] = await db.query(
-    "SELECT id FROM notifications WHERE type='low on supplies' AND reference_id=? ORDER BY id DESC LIMIT 1",
-    [product.id]
-  );
-
-  // Only send when new OR if stock went from >=20 to <20
-  if (!existing.length && stock < 20) {
+  // If stock is below the threshold, send notification
+  if (stock < 20) {
     await sendNotification(
       "low on supplies",
       product.id,
@@ -161,8 +155,6 @@ const lowStockNotification = async (product) => {
     );
   }
 };
-
-
 
 const orderStatusNotification = async (order) => {
   if (!order.status) return;
@@ -366,36 +358,50 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     stock = Number(stock);
     price = Number(price);
 
-    const [prevRows] = await db.query("SELECT stock, name FROM products WHERE id = ?", [id]);
+    const [prevRows] = await db.query("SELECT stock, name, image_url FROM products WHERE id = ?", [id]);
     if (!prevRows.length) return res.status(404).json({ error: "Product not found" });
 
     const prevStock = Number(prevRows[0].stock);
-    if (req.file) {
-        image_url = req.file.secure_url;
-      }
 
+    let image_url = existingImageUrl || prevRows[0].image_url;
+    if (req.file) {
+      image_url = req.file.secure_url;
+    }
 
     await db.query(
       `UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?`,
       [name, price, stock, category, description, image_url, id]
     );
 
-    // Fetch updated product and send notification if stock drops below 20
     const [rows] = await db.query("SELECT id, name, stock FROM products WHERE id = ?", [id]);
-    if (rows.length > 0 && prevStock >= 20 && stock < 20) await lowStockNotification(rows[0]);
+    const updated = rows[0];
 
-    const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
+    if (prevStock >= 20 && updated.stock < 20) {
+      await lowStockNotification(updated);  // <-- This now matches your new function!
+    }
+
+    const supplyAlert = updated.stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
     res.json({
       message: "Product updated successfully",
       supply_alert: supplyAlert,
-      product: { id, name, price, stock, category, description, image_url }
+      product: {
+        id,
+        name,
+        price,
+        stock,
+        category,
+        description,
+        image_url
+      }
     });
+
   } catch (err) {
     console.error("Update product error:", err);
     res.status(500).json({ error: "Failed to update product" });
   }
 });
+
 
 
 app.delete("/products/:id", async (req, res) => {
