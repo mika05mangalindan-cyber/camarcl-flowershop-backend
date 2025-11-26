@@ -28,6 +28,7 @@ app.use(cors({
     "http://localhost:3000",
     "http://localhost:5173",
     "https://camarcl-flowershop-frontend.vercel.app",
+    "https://camarcl-flowershop-git-9523b2-mika05mangalindan-cybers-projects.vercel.app",
     process.env.FRONTEND_URL
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
