@@ -171,9 +171,9 @@ app.post("/products", upload.single("image"), async (req, res) => {
     return res.status(400).json({ error: "Product image is required" });
    }
 
-   console.log("Uploaded file info:", req.file); // 🔹 check this
-   
-    const image_url = req.file.path;
+
+    const image_url = req.file?.path || `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/products/${req.file.filename}`;
+
 
     const [result] = await db.query(
       `INSERT INTO products (name, price, stock, category, description, image_url, created_at)
@@ -251,7 +251,7 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     let image_url = existingImageUrl;
 
     if (req.file) {
-      image_url = req.file.path;
+      image_url = req.file?.path || `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/products/${req.file.filename}`;
     }
 
 
