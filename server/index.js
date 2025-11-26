@@ -171,7 +171,7 @@ app.post("/products", upload.single("image"), async (req, res) => {
     return res.status(400).json({ error: "Product image is required" });
    }
 
-    const image_url = req.file.secure_url;
+     const image_url = req.file.path || req.file.secure_url;
 
 
     const [result] = await db.query(
@@ -181,7 +181,7 @@ app.post("/products", upload.single("image"), async (req, res) => {
     );
 
 
-    const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
+   const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
     res.json({
       message: "Product added successfully",
@@ -251,8 +251,8 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
 
     let image_url = existingImageUrl;
 
-    if (req.file) {
-      image_url = req.file.secure_url;
+     if (req.file) {
+      image_url = req.file.path || req.file.secure_url;
     }
 
 
