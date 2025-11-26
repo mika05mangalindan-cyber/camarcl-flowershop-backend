@@ -167,6 +167,9 @@ app.post("/products", upload.single("image"), async (req, res) => {
   try {
     const { name, price, stock, category, description } = req.body;
 
+    stock = Number(stock);
+    price = Number(price);
+
     if (!req.file) {
     return res.status(400).json({ error: "Product image is required" });
    }
@@ -180,10 +183,8 @@ app.post("/products", upload.single("image"), async (req, res) => {
       [name, price, stock, category, description, image_url]
     );
 
-     const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
-     if (stock < 20) {
-      await checkLowStock(result.insertId, stock, name);
-    }
+    if (stock < 20) await checkLowStock(result.insertId, stock, name);
+    const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
     res.json({
       message: "Product added successfully",
@@ -249,6 +250,9 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     const { id } = req.params;
     const { name, price, stock, category, description, existingImageUrl } = req.body;
 
+    stock = Number(stock);
+    price = Number(price);
+
     console.log("REQ FILE:", req.file);
 
     let image_url = existingImageUrl;
@@ -264,13 +268,15 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     );
 
 
-      if (stock < 20 && prevStock >= 20) {
+    if (stock < 20 && prevStock >= 20) {
       await checkLowStock(id, stock, name);
     }
 
+    const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
+
     res.json({
       message: "Product updated successfully",
-      supply_alert: stock < 20 ? "LOW ON SUPPLIES" : "OK",
+      supply_alert: supplyAlert,
       product: { id, name, price, stock, category, description, image_url }
     });
 
