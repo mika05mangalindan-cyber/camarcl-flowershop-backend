@@ -673,7 +673,7 @@ app.post("/login", async (req, res) => {
 });
 
 
-app.post("/admin/logout", (req, res) => {
+app.post("/logout", (req, res) => {
   req.session.destroy(err => {
     if (err) return res.status(500).json({ error: "Logout failed" });
     res.clearCookie("connect.sid"); 
@@ -690,7 +690,7 @@ const requireAdmin = (req, res, next) => {
 };
 
 // ---------------- DASHBOARD (PROTECTED) ----------------
-app.get("/admin/dashboard", requireAdmin, (req, res) => {
+app.get("/dashboard", requireAdmin, (req, res) => {
   res.json({ user: req.session.user });
 });
 
