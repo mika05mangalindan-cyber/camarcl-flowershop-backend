@@ -720,10 +720,9 @@ app.get("/", (req, res) => {
   res.send("Welcome to Camarcl Flowershop Backend!");
 });
 
-app.all("/*", (req, res) => {
+app.all("*", (req, res) => {
   res.status(404).json({ error: "Route not found" });
 });
-
 
 // Start server
 httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
