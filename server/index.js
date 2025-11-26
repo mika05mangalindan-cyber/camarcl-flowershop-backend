@@ -180,7 +180,7 @@ app.post("/products", upload.single("image"), async (req, res) => {
       [name, price, stock, category, description, image_url]
     );
 
-
+    await checkLowStock(result.insertId, stock, name);
    const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
     res.json({
@@ -261,6 +261,9 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
       [name, price, stock, category, description, image_url, id]
     );
 
+
+    await checkLowStock(id, stock, name);
+    
     res.json({
       message: "Product updated successfully",
       supply_alert: stock < 20 ? "LOW ON SUPPLIES" : "OK",
