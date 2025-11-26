@@ -28,11 +28,21 @@ app.use(cors({
     "http://localhost:3000",
     "http://localhost:5173",
     "https://camarcl-flowershop-frontend.vercel.app",
-    process.env.FRONTEND_URL
+    // process.env.FRONTEND_URL
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true
 }));
+
+app.options("*", cors({
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://camarcl-flowershop-frontend.vercel.app",
+    process.env.FRONTEND_URL
+  ],
+  credentials: true
+}))
 
 
 app.use(express.json());
@@ -44,6 +54,7 @@ app.use(session({
   saveUninitialized: false,
   cookie: { secure: false }
 }));
+
 
 
 // // Database connection
@@ -657,46 +668,29 @@ app.delete("/notifications/:id", async (req, res) => {
 });
 
 // Login & Logout ----------------
-
 app.post("/login", async (req, res) => {
-  try {
-    const emailInput = req.body.email?.trim();
-    const passwordInput = req.body.password?.trim();
+  const emailInput = req.body.email?.trim();
+  const passwordInput = req.body.password?.trim();
 
-    if (!emailInput || !passwordInput) {
-      return res.status(400).json({ error: "Email and password are required." });
-    }
+  if (!emailInput || !passwordInput) return res.status(400).json({ error: "Email and password are required." });
 
-    const [rows] = await db.query(
-      "SELECT id, name, email, password, role FROM users WHERE email=?",
-      [emailInput]
-    );
+  const [rows] = await db.query(
+    "SELECT id, name, email, password, role FROM users WHERE email=?",
+    [emailInput]
+  );
 
-    if (rows.length === 0) {
-      return res.status(400).json({ error: "Invalid email or password." });
-    }
+  if (!rows.length) return res.status(400).json({ error: "Invalid email or password." });
 
-    const user = rows[0];
+  const user = rows[0];
 
-    if (passwordInput !== user.password) {
-      return res.status(400).json({ error: "Invalid email or password." });
-    }
+  if (passwordInput !== user.password) return res.status(400).json({ error: "Invalid email or password." });
 
-    // Check admin role
-    if (user.role !== "admin") {
-      return res.status(403).json({ error: "Access denied. Admins only." });
-    }
+  if (user.role !== "admin") return res.status(403).json({ error: "Access denied. Admins only." });
 
-    // Save session
-    req.session.user = { id: user.id, name: user.name, role: user.role };
+  req.session.user = { id: user.id, name: user.name, role: user.role };
 
-    res.json({ message: "Login successful", user: req.session.user });
-  } catch (err) {
-    console.error("Login error:", err);
-    res.status(500).json({ error: "Login failed. Try again." });
-  }
+  res.json({ message: "Login successful", user: req.session.user });
 });
-
 
 
 
