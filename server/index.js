@@ -144,7 +144,7 @@ const lowStockNotification = async (product) => {
   if (product.stock == null) return;
 
   const stock = Number(product.stock);
-  if (stock < 20) {
+  if (!isNaN(stock) && stock < 20) {
     await sendNotification(
       "low on supplies",
       product.id,
@@ -152,6 +152,7 @@ const lowStockNotification = async (product) => {
     );
   }
 };
+
 
 
 
@@ -536,6 +537,11 @@ app.post("/orders", async (req, res) => {
     for (const item of orderItemsData) {
       const product = products.find(p => p.id === item.product_id);
       await conn.query("UPDATE products SET stock=? WHERE id=?", [product.stock - item.quantity, product.id]);
+
+      const [updatedRows] = await conn.query("SELECT id, name, stock FROM products WHERE id=?", [product.id]);
+      if (updatedRows.length > 0) await lowStockNotification(updatedRows[0]);
+
+
     }
 
     await conn.commit();
