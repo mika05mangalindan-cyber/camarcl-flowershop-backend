@@ -140,16 +140,21 @@ const sendNotification = async (type, reference_id, message) => {
   }
 };
 
-const checkLowStock = async (id, stock, name) => {
-  const numericStock = Number(stock);
-  if (numericStock < 20) {
+const lowStockNotification = async (product) => {
+  if (product.stock == null) return;
+
+  const stock = Number(product.stock);
+  if (stock < 20) {
     await sendNotification(
       "low on supplies",
-      id, 
-      `Product '${name}' is low on supplies!`
+      product.id,
+      `Product '${product.name}' is low on supplies!`
     );
   }
 };
+
+
+
 
 const orderStatusNotification = async (order) => {
   if (!order.status) return;
@@ -168,19 +173,65 @@ const orderStatusNotification = async (order) => {
 
 // PRODUCTS ----------------
 
+// app.post("/products", upload.single("image"), async (req, res) => {
+//   try {
+//     let { name, price, stock, category, description } = req.body;
+
+//     if (!req.file) {
+//       return res.status(400).json({ error: "Product image is required" });
+//     }
+
+//     stock = Number(stock);
+//     price = Number(price);
+
+//      const image_url = req.file.path || req.file.secure_url;
+
+
+//     const [result] = await db.query(
+//       `INSERT INTO products (name, price, stock, category, description, image_url, created_at)
+//        VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+//       [name, price, stock, category, description, image_url]
+//     );
+
+//    if (stock < 20) {
+//       await sendNotification(
+//         "low on supplies",
+//         result.insertId,
+//         `Product '${name}' is low on supplies!`
+//       );
+//     }
+
+//     const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
+
+
+//     res.json({
+//       message: "Product added successfully",
+//       supply_alert: supplyAlert,
+//       product: {
+//         id: result.insertId,
+//         name,
+//         price,
+//         stock,
+//         category,
+//         description,
+//         image_url
+//       }
+//     });
+//   } catch (err) {
+//     console.error("Add product error:", err);
+//     res.status(500).json({ error: "Failed to add product" });
+//   }
+// });
+
 app.post("/products", upload.single("image"), async (req, res) => {
   try {
     let { name, price, stock, category, description } = req.body;
 
-    if (!req.file) {
-      return res.status(400).json({ error: "Product image is required" });
-    }
+    if (!req.file) return res.status(400).json({ error: "Product image is required" });
 
     stock = Number(stock);
     price = Number(price);
-
-     const image_url = req.file.path || req.file.secure_url;
-
+    const image_url = req.file.path || req.file.secure_url;
 
     const [result] = await db.query(
       `INSERT INTO products (name, price, stock, category, description, image_url, created_at)
@@ -188,35 +239,23 @@ app.post("/products", upload.single("image"), async (req, res) => {
       [name, price, stock, category, description, image_url]
     );
 
-   if (stock < 20) {
-      await sendNotification(
-        "low on supplies",
-        result.insertId,
-        `Product '${name}' is low on supplies!`
-      );
-    }
+    // Fetch the product from DB and send notification if needed
+    const [rows] = await db.query("SELECT id, name, stock FROM products WHERE id = ?", [result.insertId]);
+    if (rows.length > 0) await lowStockNotification(rows[0]);
 
     const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
-
 
     res.json({
       message: "Product added successfully",
       supply_alert: supplyAlert,
-      product: {
-        id: result.insertId,
-        name,
-        price,
-        stock,
-        category,
-        description,
-        image_url
-      }
+      product: { id: result.insertId, name, price, stock, category, description, image_url }
     });
   } catch (err) {
     console.error("Add product error:", err);
     res.status(500).json({ error: "Failed to add product" });
   }
 });
+
 
 app.get("/products", async (req, res) => {
   try {
@@ -258,6 +297,59 @@ app.get("/products/:id", async (req, res) => {
   }
 });
 
+// app.put("/products/:id", upload.single("image"), async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     let { name, price, stock, category, description, existingImageUrl } = req.body;
+
+//     stock = Number(stock);
+//     price = Number(price);
+
+//      const [prevRows] = await db.query("SELECT stock, name FROM products WHERE id = ?", [id]);
+//     if (!prevRows.length) return res.status(404).json({ error: "Product not found" });
+
+//     const prevStock = Number(prevRows[0].stock);
+//     const prevName = prevRows[0].name;
+
+//     console.log("REQ FILE:", req.file);
+
+//     let image_url = existingImageUrl;
+
+//      if (req.file) {
+//       image_url = req.file.path || req.file.secure_url;
+//     }
+
+
+//     await db.query(
+//       `UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?`,
+//       [name, price, stock, category, description, image_url, id]
+//     );
+
+
+//      const productName = name || prevName;
+
+//     if (stock < 20 && prevStock >= 20) {
+//       await sendNotification(
+//         "low on supplies",
+//         id,
+//         `Product '${productName}' is low on supplies!`
+//       );
+//     }
+
+//     const supplyAlert = Number(stock) < 20 ? "LOW ON SUPPLIES" : "OK";
+
+//     res.json({
+//       message: "Product updated successfully",
+//       supply_alert: supplyAlert,
+//       product: { id, name, price, stock, category, description, image_url }
+//     });
+
+//   } catch (err) {
+//     console.error("Update product error:", err);
+//     res.status(500).json({ error: "Failed to update product" });
+//   }
+// });
+
 app.put("/products/:id", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
@@ -266,50 +358,35 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     stock = Number(stock);
     price = Number(price);
 
-     const [prevRows] = await db.query("SELECT stock, name FROM products WHERE id = ?", [id]);
+    const [prevRows] = await db.query("SELECT stock, name FROM products WHERE id = ?", [id]);
     if (!prevRows.length) return res.status(404).json({ error: "Product not found" });
 
     const prevStock = Number(prevRows[0].stock);
-    const prevName = prevRows[0].name;
-
-    console.log("REQ FILE:", req.file);
-
     let image_url = existingImageUrl;
-
-     if (req.file) {
-      image_url = req.file.path || req.file.secure_url;
-    }
-
+    if (req.file) image_url = req.file.path || req.file.secure_url;
 
     await db.query(
       `UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?`,
       [name, price, stock, category, description, image_url, id]
     );
 
+    // Fetch updated product and send notification if stock drops below 20
+    const [rows] = await db.query("SELECT id, name, stock FROM products WHERE id = ?", [id]);
+    if (rows.length > 0 && prevStock >= 20 && stock < 20) await lowStockNotification(rows[0]);
 
-     const productName = name || prevName;
-
-    if (stock < 20 && prevStock >= 20) {
-      await sendNotification(
-        "low on supplies",
-        id,
-        `Product '${productName}' is low on supplies!`
-      );
-    }
-
-    const supplyAlert = Number(stock) < 20 ? "LOW ON SUPPLIES" : "OK";
+    const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
     res.json({
       message: "Product updated successfully",
       supply_alert: supplyAlert,
       product: { id, name, price, stock, category, description, image_url }
     });
-
   } catch (err) {
     console.error("Update product error:", err);
     res.status(500).json({ error: "Failed to update product" });
   }
 });
+
 
 app.delete("/products/:id", async (req, res) => {
   try {
