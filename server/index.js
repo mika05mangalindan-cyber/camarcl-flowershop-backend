@@ -28,8 +28,7 @@ app.use(cors({
     "http://localhost:3000",
     "http://localhost:5173",
     "https://camarcl-flowershop-frontend.vercel.app",
-    "https://camarcl-flowershop-git-9523b2-mika05mangalindan-cybers-projects.vercel.app",
-    process.env.FRONTEND_URL
+    // process.env.FRONTEND_URL
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true
@@ -42,10 +41,12 @@ app.use(session({
   secret: process.env.SESSION_SECRET || "superSecretKey123",
   resave: false,
   saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === "production", // true on HTTPS
-    sameSite: "none" // allow cross-site cookies
-  }
+ cookie: {
+  secure: process.env.NODE_ENV === "production", // true on HTTPS, false locally
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+  httpOnly: true
+}
+
 }));
 
 const db = mysql.createPool({
@@ -648,4 +649,4 @@ app.get("/", (req, res) => res.send("Backend running!"));
 // app.all("*", (req, res) => res.status(404).json({ error: "Route not found" }));
 
 // Start server
-httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
