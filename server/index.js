@@ -248,8 +248,9 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     let image_url = existingImageUrl;
 
     if (req.file) {
-      image_url = req.file.secure_url;
+      image_url = req.file.path;
     }
+
 
     await db.query(
       `UPDATE products SET name=?, price=?, stock=?, category=?, description=?, image_url=? WHERE id=?`,
