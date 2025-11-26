@@ -172,7 +172,7 @@ app.post("/products", upload.single("image"), async (req, res) => {
    }
 
 
-    const image_url = req.file?.path || `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/products/${req.file.filename}`;
+   const image_url = req.file.path || req.file.secure_url;
 
 
     const [result] = await db.query(
@@ -251,7 +251,7 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     let image_url = existingImageUrl;
 
     if (req.file) {
-      image_url = req.file?.path || `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/products/${req.file.filename}`;
+      image_url = req.file.path || req.file.secure_url;
     }
 
 
