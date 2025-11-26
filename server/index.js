@@ -7,6 +7,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
 import { v2 as cloudinary } from "cloudinary";
+import session from "express-session";
 
 dotenv.config();
 
@@ -35,6 +36,13 @@ app.use(cors({
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use(session({
+  secret: "superSecretKey123",
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false }
+}));
 
 // // Database connection
 // const db = mysql.createPool({
@@ -146,15 +154,21 @@ const lowStockNotification = async (product) => {
   const stock = Number(product.stock);
   if (isNaN(stock)) return;
 
-  // If stock is below the threshold, send notification
-  if (stock < 20) {
+  // Normalize: get fresh product from DB
+  const [rows] = await db.query("SELECT id, name, stock FROM products WHERE id=?", [product.id]);
+  if (!rows.length) return;
+
+  const freshProduct = rows[0];
+
+  if (Number(freshProduct.stock) < 20) {
     await sendNotification(
       "low on supplies",
-      product.id,
-      `Product '${product.name}' is low on supplies!`
+      freshProduct.id,
+      `Product '${freshProduct.name}' is low on supplies!`
     );
   }
 };
+
 
 const orderStatusNotification = async (order) => {
   if (!order.status) return;
@@ -233,15 +247,14 @@ app.post("/products", upload.single("image"), async (req, res) => {
     price = Number(price);
     const image_url = req.file.secure_url;
 
-
     const [result] = await db.query(
       `INSERT INTO products (name, price, stock, category, description, image_url, created_at)
        VALUES (?, ?, ?, ?, ?, ?, NOW())`,
       [name, price, stock, category, description, image_url]
     );
 
-     const product = { id: result.insertId, name, stock };
-      await lowStockNotification(product);
+    // Send notification like orderStatus
+    await lowStockNotification({ id: result.insertId, name, stock });
 
     const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
@@ -255,6 +268,7 @@ app.post("/products", upload.single("image"), async (req, res) => {
     res.status(500).json({ error: "Failed to add product" });
   }
 });
+
 
 
 app.get("/products", async (req, res) => {
@@ -373,12 +387,13 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
       [name, price, stock, category, description, image_url, id]
     );
 
-    const [rows] = await db.query("SELECT id, name, stock FROM products WHERE id = ?", [id]);
+    const [rows] = await db.query("SELECT id, name, stock FROM products WHERE id=?", [id]);
     const updated = rows[0];
 
-    if (prevStock >= 20 && updated.stock < 20) {
-      await lowStockNotification(updated);  // <-- This now matches your new function!
+    if (Number(updated.stock) < 20) {
+      await lowStockNotification(updated);
     }
+
 
     const supplyAlert = updated.stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
@@ -638,6 +653,69 @@ app.delete("/notifications/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+
+app.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const [rows] = await db.query(
+      "SELECT id, name, email, password, role FROM users WHERE email=?",
+      [email]
+    );
+
+    if (rows.length === 0) {
+      return res.status(400).json({ error: "Invalid email or password" });
+    }
+
+    const user = rows[0];
+
+    // Plaintext check (because your DB has plaintext passwords)
+    if (password !== user.password) {
+      return res.status(400).json({ error: "Invalid email or password" });
+    }
+
+    // Save login info to session
+    req.session.user = {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+    };
+
+    res.json({ message: "Login successful", user: req.session.user });
+
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ error: "Login failed" });
+  }
+});
+
+
+app.post("/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.json({ message: "Logged out successfully" });
+  });
+});
+
+const requireLogin = (req, res, next) => {
+  if (!req.session.user) {
+    return res.status(401).json({ error: "Unauthorized. Please log in." });
+  }
+  next();
+};
+
+// backend
+app.get("/admin/dashboard", (req, res) => {
+  if (req.session?.user) {
+    res.json({ user: req.session.user });
+  } else {
+    res.status(401).json({ error: "Not logged in" });
+  }
+});
+
+
+
+
 
 // Root
 app.get("/", (req, res) => {
