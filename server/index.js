@@ -168,8 +168,11 @@ app.post("/products", upload.single("image"), async (req, res) => {
     const { name, price, stock, category, description } = req.body;
 
     if (!req.file) {
-  return res.status(400).json({ error: "Product image is required" });
-}
+    return res.status(400).json({ error: "Product image is required" });
+   }
+
+   console.log("Uploaded file info:", req.file); // 🔹 check this
+   
     const image_url = req.file.path;
 
     const [result] = await db.query(
@@ -282,12 +285,13 @@ app.delete("/products/:id", async (req, res) => {
     const imageUrl = rows[0].image_url;
 
     if (imageUrl) {
-      const parts = imageUrl.split("/");
-      const file = parts[parts.length - 1];
-      const publicId = "products/" + file.split(".")[0];
+      const urlParts = imageUrl.split("/");  
+      const fileWithExt = urlParts[urlParts.length - 1];  
+      const fileName = fileWithExt.split(".")[0];          
+      const publicId = `products/${fileName}`;        
 
       await cloudinary.uploader.destroy(publicId);
-    }
+        }
 
     await db.query("DELETE FROM products WHERE id = ?", [id]);
 
