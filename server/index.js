@@ -171,55 +171,6 @@ const orderStatusNotification = async (order) => {
 
 // PRODUCTS ----------------
 
-// app.post("/products", upload.single("image"), async (req, res) => {
-//   try {
-//     let { name, price, stock, category, description } = req.body;
-
-//     if (!req.file) {
-//       return res.status(400).json({ error: "Product image is required" });
-//     }
-
-//     stock = Number(stock);
-//     price = Number(price);
-
-//      const image_url = req.file.path || req.file.secure_url;
-
-
-//     const [result] = await db.query(
-//       `INSERT INTO products (name, price, stock, category, description, image_url, created_at)
-//        VALUES (?, ?, ?, ?, ?, ?, NOW())`,
-//       [name, price, stock, category, description, image_url]
-//     );
-
-//    if (stock < 20) {
-//       await sendNotification(
-//         "low on supplies",
-//         result.insertId,
-//         `Product '${name}' is low on supplies!`
-//       );
-//     }
-
-//     const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
-
-
-//     res.json({
-//       message: "Product added successfully",
-//       supply_alert: supplyAlert,
-//       product: {
-//         id: result.insertId,
-//         name,
-//         price,
-//         stock,
-//         category,
-//         description,
-//         image_url
-//       }
-//     });
-//   } catch (err) {
-//     console.error("Add product error:", err);
-//     res.status(500).json({ error: "Failed to add product" });
-//   }
-// });
 
 app.post("/products", upload.single("image"), async (req, res) => {
   try {
@@ -689,8 +640,8 @@ app.get("/", (req, res) => {
 
 app.get("/", (req, res) => res.send("Backend running!"));
 
-// Catch-all
-app.all("*", (req, res) => res.status(404).json({ error: "Route not found" }));
+// // Catch-all
+// app.all("*", (req, res) => res.status(404).json({ error: "Route not found" }));
 
 // Start server
 httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
