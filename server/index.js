@@ -141,9 +141,10 @@ const sendNotification = async (type, reference_id, message) => {
 };
 
 const lowStockNotification = async (product) => {
-  if (product.stock == null) return;
+  if (product.stock == null) return; 
 
-  const stock = Number(product.stock);
+  const stock = Number(product.stock); 
+
   if (!isNaN(stock) && stock < 20) {
     await sendNotification(
       "low on supplies",
@@ -152,6 +153,7 @@ const lowStockNotification = async (product) => {
     );
   }
 };
+
 
 
 
@@ -240,9 +242,8 @@ app.post("/products", upload.single("image"), async (req, res) => {
       [name, price, stock, category, description, image_url]
     );
 
-    // Fetch the product from DB and send notification if needed
-    const [rows] = await db.query("SELECT id, name, stock FROM products WHERE id = ?", [result.insertId]);
-    if (rows.length > 0) await lowStockNotification(rows[0]);
+     const product = { id: result.insertId, name, stock };
+      await lowStockNotification(product);
 
     const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
@@ -538,8 +539,11 @@ app.post("/orders", async (req, res) => {
       const product = products.find(p => p.id === item.product_id);
       await conn.query("UPDATE products SET stock=? WHERE id=?", [product.stock - item.quantity, product.id]);
 
-      const [updatedRows] = await conn.query("SELECT id, name, stock FROM products WHERE id=?", [product.id]);
-      if (updatedRows.length > 0) await lowStockNotification(updatedRows[0]);
+      const [updated] = await conn.query(
+      "SELECT id, name, stock FROM products WHERE id=?",
+      [product.id]
+    );
+      if (updated.length > 0) await lowStockNotification(updated[0]);
 
 
     }
