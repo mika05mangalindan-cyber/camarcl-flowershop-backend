@@ -180,6 +180,7 @@ app.post("/products", upload.single("image"), async (req, res) => {
       [name, price, stock, category, description, image_url]
     );
 
+     const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
      if (stock < 20) {
       await checkLowStock(result.insertId, stock, name);
     }
