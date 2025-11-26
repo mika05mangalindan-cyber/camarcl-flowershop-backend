@@ -168,10 +168,9 @@ app.post("/products", upload.single("image"), async (req, res) => {
     const { name, price, stock, category, description } = req.body;
 
     if (!req.file) {
-      return res.status(400).json({ error: "Product image is required" });
-    }
-
-    const image_url = req.file.secure_url;
+  return res.status(400).json({ error: "Product image is required" });
+}
+    const image_url = req.file.path;
 
     const [result] = await db.query(
       `INSERT INTO products (name, price, stock, category, description, image_url, created_at)
