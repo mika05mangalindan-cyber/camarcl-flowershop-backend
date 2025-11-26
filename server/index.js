@@ -140,9 +140,13 @@ const sendNotification = async (type, reference_id, message) => {
   }
 };
 
-const checkLowStock = async (productId, stock, productName) => {
+const checkLowStock = async (id, stock, name) => {
   if (Number(stock) < 20) {
-    await sendNotification("low on supplies", productId, `Product '${productName}' is low on supplies!`);
+    await sendNotification(
+      "low on supplies",
+      id, 
+      `Product '${name}' is low on supplies!` 
+    );
   }
 };
 
@@ -166,9 +170,6 @@ const orderStatusNotification = async (order) => {
 app.post("/products", upload.single("image"), async (req, res) => {
   try {
     const { name, price, stock, category, description } = req.body;
-
-    stock = Number(stock);
-    price = Number(price);
 
     if (!req.file) {
     return res.status(400).json({ error: "Product image is required" });
@@ -250,8 +251,11 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     const { id } = req.params;
     const { name, price, stock, category, description, existingImageUrl } = req.body;
 
-    stock = Number(stock);
-    price = Number(price);
+    const [prevRows] = await db.query("SELECT stock, name FROM products WHERE id = ?", [id]);
+    if (!prevRows.length) return res.status(404).json({ error: "Product not found" });
+
+    const prevStock = Number(prevRows[0].stock);
+    const prevName = prevRows[0].name;
 
     console.log("REQ FILE:", req.file);
 
@@ -268,11 +272,14 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
     );
 
 
-    if (stock < 20 && prevStock >= 20) {
+    const productName = name || prevName;
+
+    // Trigger notification only if stock drops below 20 from previous >=20
+    if (Number(stock) < 20 && prevStock >= 20) {
       await checkLowStock(id, stock, name);
     }
 
-    const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
+    const supplyAlert = Number(stock) < 20 ? "LOW ON SUPPLIES" : "OK";
 
     res.json({
       message: "Product updated successfully",
