@@ -44,6 +44,7 @@ app.use(session({
   cookie: { secure: false }
 }));
 
+
 // // Database connection
 // const db = mysql.createPool({
 //   host: process.env.DB_HOST,
@@ -654,39 +655,23 @@ app.delete("/notifications/:id", async (req, res) => {
   }
 });
 
-// ---------------- LOGIN & LOGOUT ----------------
-app.post("/admin/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
+app.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+  const [rows] = await db.query("SELECT id, name, email, password, role FROM users WHERE email=?", [email]);
 
-    const [rows] = await db.query(
-      "SELECT id, name, email, password, role FROM users WHERE email=?",
-      [email]
-    );
+  if (rows.length === 0) return res.status(400).json({ error: "Invalid email or password" });
 
-    if (!rows.length) return res.status(400).json({ error: "Invalid email or password" });
+  const user = rows[0];
 
-    const user = rows[0];
+  if (password !== user.password) return res.status(400).json({ error: "Invalid email or password" });
 
-    if (password !== user.password)
-      return res.status(400).json({ error: "Invalid email or password" });
+  // Check admin role
+  if (user.role !== "admin") return res.status(403).json({ error: "Access denied. Admins only." });
 
-    if (user.role !== "admin")
-      return res.status(403).json({ error: "Access denied. Admins only." });
-
-    // Save session
-    req.session.user = {
-      id: user.id,
-      name: user.name,
-      role: user.role
-    };
-
-    res.json({ message: "Login successful", user: req.session.user });
-  } catch (err) {
-    console.error("Login error:", err);
-    res.status(500).json({ error: "Login failed" });
-  }
+  req.session.user = { id: user.id, name: user.name, role: user.role };
+  res.json({ message: "Login successful", user: req.session.user });
 });
+
 
 app.post("/admin/logout", (req, res) => {
   req.session.destroy(err => {
