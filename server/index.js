@@ -188,7 +188,15 @@ app.post("/products", upload.single("image"), async (req, res) => {
       [name, price, stock, category, description, image_url]
     );
 
-   if (stock < 20) await checkLowStock(result.insertId, stock, name);
+   if (stock < 20) {
+      await sendNotification(
+        "low on supplies",
+        result.insertId,
+        `Product '${name}' is low on supplies!`
+      );
+    }
+
+    const supplyAlert = stock < 20 ? "LOW ON SUPPLIES" : "OK";
 
 
     res.json({
@@ -282,7 +290,11 @@ app.put("/products/:id", upload.single("image"), async (req, res) => {
      const productName = name || prevName;
 
     if (stock < 20 && prevStock >= 20) {
-      await checkLowStock(id, stock, productName);
+      await sendNotification(
+        "low on supplies",
+        id,
+        `Product '${productName}' is low on supplies!`
+      );
     }
 
     const supplyAlert = Number(stock) < 20 ? "LOW ON SUPPLIES" : "OK";
