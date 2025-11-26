@@ -34,42 +34,15 @@ app.use(cors({
   credentials: true
 }));
 
-
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(session({
-  secret: "superSecretKey123",
+  secret: process.env.SESSION_SECRET || "superSecretKey123",
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false }
+  cookie: { secure: false } // Set to true if using HTTPS
 }));
-
-
-// // Database connection
-// const db = mysql.createPool({
-//   host: process.env.DB_HOST,
-//   user: process.env.DB_USER,
-//   password: process.env.DB_PASSWORD,
-//   database: process.env.DB_NAME,
-//   port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
-//   waitForConnections: true,
-//   connectionLimit: 10,
-//   queueLimit: 0
-// });
-
-// // Test DB connection
-// (async () => {
-//   try {
-//     const conn = await db.getConnection();
-//     console.log("Connected to MySQL database!");
-//     conn.release();
-//   } catch (err) {
-//     console.error("MySQL connection error:", err);
-//     process.exit(1);
-//   }
-// })();
 
 const db = mysql.createPool({
   host: process.env.DB_HOST,
@@ -132,6 +105,14 @@ const storage = new CloudinaryStorage({
 const upload = multer({ storage });
 
 // Helpers
+
+const requireAdmin = (req, res, next) => {
+  if (!req.session.user || req.session.user.role !== "admin") {
+    return res.status(401).json({ error: "Unauthorized. Admin login required." });
+  }
+  next();
+};
+
 const sendNotification = async (type, reference_id, message) => {
   try {
     const [result] = await db.query(
@@ -659,60 +640,46 @@ app.delete("/notifications/:id", async (req, res) => {
 
 // Login & Logout ----------------
 app.post("/login", async (req, res) => {
-  const emailInput = req.body.email?.trim();
-  const passwordInput = req.body.password?.trim();
-
-  if (!emailInput || !passwordInput)
+  const { email, password } = req.body;
+  if (!email || !password)
     return res.status(400).json({ error: "Email and password are required." });
 
-  const [rows] = await db.query(
-    "SELECT id, name, email, password, role FROM users WHERE email=?",
-    [emailInput]
-  );
+  try {
+    const [rows] = await db.query(
+      "SELECT id, name, email, password, role FROM users WHERE email=?",
+      [email]
+    );
 
-  if (!rows.length)
-    return res.status(400).json({ error: "Invalid email or password." });
+    if (!rows.length) return res.status(400).json({ error: "Invalid email or password." });
 
-  const user = rows[0];
+    const user = rows[0];
 
-  if (passwordInput !== user.password)
-    return res.status(400).json({ error: "Invalid email or password." });
+    // Plain-text check (use bcrypt in production)
+    if (password !== user.password)
+      return res.status(400).json({ error: "Invalid email or password." });
 
-  if (user.role !== "admin")
-    return res.status(403).json({ error: "Access denied. Admins only." });
+    if (user.role !== "admin")
+      return res.status(403).json({ error: "Access denied. Admins only." });
 
-  req.session.user = { id: user.id, name: user.name, role: user.role };
-
-  res.json({ message: "Login successful", user: req.session.user });
+    req.session.user = { id: user.id, name: user.name, role: user.role };
+    res.json({ message: "Login successful", user: req.session.user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
-
 
 app.post("/logout", (req, res) => {
   req.session.destroy(err => {
     if (err) return res.status(500).json({ error: "Logout failed" });
-    res.clearCookie("connect.sid"); 
+    res.clearCookie("connect.sid");
     res.json({ message: "Logged out successfully" });
   });
 });
 
-// ---------------- MIDDLEWARE ----------------
-const requireAdmin = (req, res, next) => {
-  if (!req.session.user || req.session.user.role !== "admin") {
-    return res.status(401).json({ error: "Unauthorized. Admin login required." });
-  }
-  next();
-};
-
 // ---------------- DASHBOARD (PROTECTED) ----------------
 app.get("/dashboard", requireAdmin, (req, res) => {
-  res.json({ user: req.session.user });
+  res.json({ message: "Welcome Admin!", user: req.session.user });
 });
-
-
-
-
-
-
 
 
 // Root
@@ -720,9 +687,10 @@ app.get("/", (req, res) => {
   res.send("Welcome to Camarcl Flowershop Backend!");
 });
 
-app.all("*", (req, res) => {
-  res.status(404).json({ error: "Route not found" });
-});
+app.get("/", (req, res) => res.send("Backend running!"));
+
+// Catch-all
+app.all("*", (req, res) => res.status(404).json({ error: "Route not found" }));
 
 // Start server
 httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
