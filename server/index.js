@@ -28,13 +28,13 @@ app.use(cors({
     "http://localhost:3000",
     "http://localhost:5173",
     "https://camarcl-flowershop-frontend.vercel.app",
-    // process.env.FRONTEND_URL
+    process.env.FRONTEND_URL
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true
 }));
 
-app.options("*", cors({
+app.options("/*", cors({
   origin: [
     "http://localhost:3000",
     "http://localhost:5173",
@@ -42,7 +42,8 @@ app.options("*", cors({
     process.env.FRONTEND_URL
   ],
   credentials: true
-}))
+}));
+
 
 
 app.use(express.json());
